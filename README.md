@@ -4,6 +4,9 @@
 
 **SkinAI** is an AI-powered web application developed as part of the **MACS AIML Project**. It acts as a virtual skincare consultant, using Google's **Gemini 2.5 Flash** Vision Language Model to analyze facial images and provide instant, personalized skincare advice.
 
+## 🧐 Problem Statement
+The skincare market is overwhelmed with products, causing "analysis paralysis." Consumers often misidentify their skin type (e.g., confusing dry skin with dehydrated skin), leading to incorrect product usage. Professional consultations are often expensive and difficult to schedule.
+
 ## 🚀 Features & USP
 * **📸 Multimodal Analysis:** "Sees" your skin using advanced Computer Vision to detect acne, texture, and dryness.
 * **⚡ Instant Results:** Provides a structured report (Skin Type, Concerns, Routine) in under 30 seconds.
@@ -19,9 +22,13 @@
 | **Computer Vision**  | Visual feature extraction from facial images |
 
 
-## 📂 Project Structure
+## 📂 Repository Structure
+
 ```text
 SkinAI/
-├── app.py               # Main application code
-├── requirements.txt     # Project dependencies
-└── README.md            # Documentation & Guide
+├── .streamlit/          # Configuration folder
+│   └── secrets.toml     # API Keys (Hidden from GitHub)
+├── .gitignore           # Specifies files to exclude from Git
+├── Skincare.py          # Main application source code
+├── requirements.txt     # Python dependencies
+└── README.md            # Project documentation
