@@ -2,16 +2,29 @@ import streamlit as st
 import base64
 from io import BytesIO
 from PIL import Image
-from openai import OpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.messages import HumanMessage,AIMessage
 
 st.set_page_config(page_title="SkinAI", layout="wide", page_icon="✨")
 
-def encode_image_to_base64(pil_image):
-    pil_image.thumbnail((800, 800))
+api_key=st.secrets["GOOGLE_API_KEY"]
+model = ChatGoogleGenerativeAI(
+            model="gemini-2.5-flash", 
+            google_api_key=api_key,
+            max_retries=2
+        )
+
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+if "report_ready" not in st.session_state:
+    st.session_state.report_ready = False
+
+def encode_image(pil_image):
+    pil_image.thumbnail((512,512))
     buffered = BytesIO()
-    if pil_image.mode in ("RGBA", "P"):
+    if pil_image.mode != "RGB":
         pil_image = pil_image.convert("RGB")
-    pil_image.save(buffered, format="JPEG", quality=85)
+    pil_image.save(buffered, format="JPEG", quality=75)
     return base64.b64encode(buffered.getvalue()).decode("utf-8")
 
 st.markdown("""
@@ -25,67 +38,71 @@ st.markdown("""
 st.title("✨ SkinAI ✨")
 st.write("Developed by **Navya Gupta**")
 
-col1, col2 = st.columns([1, 2], gap="large")
+col1, col2=st.columns([1, 1.5], gap="large")
 
 with col1:
-    st.subheader("📸 Upload Section")
-    uploaded_file = st.file_uploader("Upload Photo", type=["jpg", "jpeg", "png"])
+    st.subheader("📸 Upload Image")
+    uploaded_file = st.file_uploader("Upload Image", type=["jpg", "png", "jpeg"])
     
-    if uploaded_file:
-        image = Image.open(uploaded_file)
-        st.image(image, caption="Uploaded Image", width=300)
-        analyze_btn = st.button("🚀 Start SkinAI")
-    else:
-        st.info("👆 Upload a clear photo of your face.")
+    if uploaded_file and not st.session_state.report_ready:
+        img = Image.open(uploaded_file)
+        st.image(img, width=150)
+        
+        if st.button("🚀 Start SkinAI"):
+            try:
+                with st.spinner("🤖 SkinAI is processing..."):
+                    processed_img = encode_image(img)
+                    prompt = "Analyze this skin image and provide: 1.Skin Type 2.Primary Concerns 3.Routine 4.Key Actives. Bullet points only. Max 150 words."
+                    
+                    input_msg = HumanMessage(content=[
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": f"data:image/jpeg;base64,{processed_img}"}
+                   ])
+                    response = model.invoke([input_msg])
+                    
+                    st.session_state.messages.append({"role": "assistant", "content": response.content})
+                    st.session_state.report_ready = True
+                    st.rerun()
+
+            except Exception as e:
+                st.error(f"Error Details: {e}")
 
 with col2:
-    st.subheader("📋 Skin Analysis")
-    if uploaded_file and analyze_btn:
-        try:
-            my_api_key = st.secrets["OPENROUTER_API_KEY"]
-            client = OpenAI(
-                base_url="https://openrouter.ai/api/v1",
-                api_key=my_api_key,
-                max_retries=3,
-            )
+    st.subheader("💬 Chat with SkinAI")
+    
+    if st.session_state.report_ready:
+        st.markdown(f'<div class="report-card"><b>SkinAI Analysis Result:</b><br>{st.session_state.messages[0]["content"]}</div>', unsafe_allow_html=True)
         
-            prompt = "Act as a skincare consultant. Analyze the image and provide: 1. Skin Type, 2. Visible Concerns, 3. Recommended Routine, 4. Key Ingredients."
-        
-            with st.status("🤖 SkinAI is processing...", expanded=True) as status:
-                st.write("Encoding image data...")
-                base64_img = encode_image_to_base64(image)
-                st.write("Consulting Vision Language Model...")
-                response = client.chat.completions.create(
-                    model="google/gemini-2.0-flash-exp:free",
-                    messages=[
-                        {
-                            "role": "user",
-                            "content": [
-                                {"type": "text", "text": prompt},
-                                {
-                                    "type": "image_url",
-                                    "image_url": {
-                                        "url": f"data:image/jpeg;base64,{base64_img}"
-                                    }
-                                },
-                            ],
-                        }
-                    ],
-                )
-                
-                result = response.choices[0].message.content
-                status.update(label="Analysis Complete!", state="complete", expanded=False)
-                
-                st.markdown(f'<div class="report-card">{result}</div>', unsafe_allow_html=True)
-                
-                with st.expander("🛡️ Medical Disclaimer"):
-                    st.caption("This analysis is for advisory purposes only and does not constitute medical advice.")
+        with st.expander("🛡️ Medical Disclaimer"):
+            st.caption("This analysis is for advisory purposes only and does not constitute medical advice.")
             
-        except Exception as e:
-            st.error(f"Error Details: {e}")
-            
-    else:
-        st.write("Waiting for image analysis...")
+        st.write("---")
 
-st.divider()
-st.caption("MACS AIML Project")
+        for msg in st.session_state.messages[1:]:
+            with st.chat_message(msg["role"]):
+                st.write(msg["content"])
+
+        if user_prompt := st.chat_input("Ask SkinAI about products..."):
+            st.session_state.messages.append({"role": "user", "content": user_prompt})
+            with st.chat_message("user"): 
+                st.write(user_prompt)
+            
+            with st.chat_message("assistant"):
+                try:
+                    limited_history = [st.session_state.messages[0]] + st.session_state.messages[-2:]
+                    
+                    langchain_messages = []
+                    for m in limited_history:
+                        if m["role"] == "user":
+                            langchain_messages.append(HumanMessage(content=m["content"]))
+                        else:
+                            langchain_messages.append(AIMessage(content=m["content"]))
+                    
+                    resp = model.invoke(langchain_messages, max_output_tokens=150)
+
+                    st.write(resp.content)
+                    st.session_state.messages.append({"role": "assistant", "content": resp.content})
+                except Exception as e:
+                    st.error("SkinAI is busy. Please try again.")
+    else:
+        st.info("Upload an image and start SkinAI to see the report here.")
