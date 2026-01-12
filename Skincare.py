@@ -18,6 +18,14 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 if "report_ready" not in st.session_state:
     st.session_state.report_ready = False
+if "uploaded_image" not in st.session_state:
+    st.session_state.uploaded_image = None
+
+def reset_everything():
+    st.session_state.messages = []
+    st.session_state.report_ready = False
+    st.session_state.uploaded_image = None
+    st.rerun()
 
 def encode_image(pil_image):
     pil_image.thumbnail((512,512))
@@ -35,37 +43,70 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("✨ SkinAI ✨")
-st.write("Developed by **Navya Gupta**")
+st.markdown("<h1 style='text-align: center;'>✨ SkinAI ✨</h1>",unsafe_allow_html=True)
+st.markdown("<p style='text-align: center;'>Developed by <b>Navya Gupta</b></p>", unsafe_allow_html=True)
+
+st.divider()
 
 col1, col2=st.columns([1, 1.5], gap="large")
 
 with col1:
     st.subheader("📸 Upload Image")
-    uploaded_file = st.file_uploader("Upload Image", type=["jpg", "png", "jpeg"])
+    if st.session_state.uploaded_image is None:
+        uploaded_file = st.file_uploader("Upload Skin Image", type=["jpg", "png", "jpeg"])
+        if uploaded_file:
+            st.session_state.uploaded_image = Image.open(uploaded_file)
+            st.rerun()
     
-    if uploaded_file and not st.session_state.report_ready:
-        img = Image.open(uploaded_file)
-        st.image(img, width=150)
+    if st.session_state.uploaded_image:
+        st.image(st.session_state.uploaded_image, width=150)
         
         if st.button("🚀 Start SkinAI"):
             try:
                 with st.spinner("🤖 SkinAI is processing..."):
-                    processed_img = encode_image(img)
-                    prompt = "Analyze this skin image and provide: 1.Skin Type 2.Primary Concerns 3.Routine 4.Key Actives. Bullet points only. Max 150 words."
-                    
+                    processed_img = encode_image(st.session_state.uploaded_image)
+                    prompt = """
+                        Act as a professional Dermatologist. Analyze this skin image and provide a report in the following EXACT Markdown format:
+                            
+                            ### 📋 SkinAI Analysis Report
+
+                            | **Category** | **Details** |
+                            | :--- | :--- |
+                            | **Skin Type** | (Identify Type) |
+                            | **Fitzpatrick Scale** | (Type I-VI) |
+                            | **Primary Concerns** | (Bullet points) |
+
+
+                            ### 🧴 Recommended Targeted Routine
+
+                            **☀️ AM (Protection & Brightening)**
+                            1. (Step-by-step)
+
+                            **🌙 PM (Repair & Barrier Support)**
+                            1. (Step-by-step)
+
+
+                            ### 🧪 **Key Active Ingredients**
+                            * **Ingredient Name:** (Why it was chosen)
+
+                        Keep the total response under 200 words. Be professional and clear.
+                    """
+                        
                     input_msg = HumanMessage(content=[
                         {"type": "text", "text": prompt},
                         {"type": "image_url", "image_url": f"data:image/jpeg;base64,{processed_img}"}
-                   ])
+                    ])
                     response = model.invoke([input_msg])
-                    
+                        
                     st.session_state.messages.append({"role": "assistant", "content": response.content})
                     st.session_state.report_ready = True
                     st.rerun()
 
             except Exception as e:
-                st.error(f"Error Details: {e}")
+                st.error(f"Error Details: {e}")    
+            
+        if st.button("🗑️ Reset"):
+            reset_everything()
 
 with col2:
     st.subheader("💬 Chat with SkinAI")
@@ -89,20 +130,15 @@ with col2:
             
             with st.chat_message("assistant"):
                 try:
-                    limited_history = [st.session_state.messages[0]] + st.session_state.messages[-2:]
+                    context_memory = [
+                        AIMessage(content=f"Context: {st.session_state.messages[0]['content']}"),
+                        HumanMessage(content=user_prompt)
+                    ]
                     
-                    langchain_messages = []
-                    for m in limited_history:
-                        if m["role"] == "user":
-                            langchain_messages.append(HumanMessage(content=m["content"]))
-                        else:
-                            langchain_messages.append(AIMessage(content=m["content"]))
-                    
-                    resp = model.invoke(langchain_messages, max_output_tokens=150)
-
+                    resp = model.invoke(context_memory)
                     st.write(resp.content)
                     st.session_state.messages.append({"role": "assistant", "content": resp.content})
                 except Exception as e:
-                    st.error("SkinAI is busy. Please try again.")
+                    st.error(f"Error:{e}")
     else:
         st.info("Upload an image and start SkinAI to see the report here.")
